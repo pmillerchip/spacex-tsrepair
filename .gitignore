@@ -1,0 +1,7 @@
+*.zip
+*.bz2
+*.gz
+*.o
+*.orig
+tsrepair
+
