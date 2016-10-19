@@ -1,5 +1,6 @@
-CXXFLAGS = -g -Wall
-LDFLAGS =
+CXXFLAGS=-g -Wall
+TSFILE=raw.ts
+TSFILE_ALIGNED=raw_aligned.ts
 
 SOURCES=\
   TSFile.cpp\
@@ -9,13 +10,18 @@ SOURCES=\
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=tsrepair
 
+all: $(TSFILE_ALIGNED)
+
 $(EXECUTABLE): $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) $(LDFLAGS)
 
-clean:
-	rm -f *.o $(EXECUTABLE) *~
+$(TSFILE_ALIGNED): $(TSFILE) $(EXECUTABLE)
+	./$(EXECUTABLE) $(TSFILE) -noprintmp4 -nofix -fix:382a8,insert,56/d7250,insert,56/215d4c,insert,56/3571ec,insert,56/3dc0ac,insert,56 $@ > aligned.txt
 
-raw.ts:
+clean:
+	rm -f *.o *.txt $(EXECUTABLE) $(TSFILE_ALIGNED) *~
+
+$(TSFILE):
 	wget -O $@ http://www.spacex.com/sites/spacex/files/raw.ts
 
 .cpp.o:

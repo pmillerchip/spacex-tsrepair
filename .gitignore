@@ -3,6 +3,7 @@
 *.gz
 *.o
 *.orig
+*.txt
 raw.ts
 tsrepair
 
