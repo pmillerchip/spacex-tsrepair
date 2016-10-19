@@ -3,5 +3,6 @@
 *.gz
 *.o
 *.orig
+raw.ts
 tsrepair
 
