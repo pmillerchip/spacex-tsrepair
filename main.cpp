@@ -687,7 +687,7 @@ processFile(std::string inputFilename,
   TSPacket packetBuffer[32768];
   
   // Create packet buffer
-  for(numPackets=0; getPacketOffset(numPackets) < fileSize; ++numPackets)
+  for(numPackets=0; (numPackets < 32768) && (getPacketOffset(numPackets) < fileSize); ++numPackets)
   {
     packetBuffer[numPackets].setData(fileData, getPacketOffset(numPackets));
   }
