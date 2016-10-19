@@ -7,7 +7,7 @@
 #include <sstream>
 #include <string.h>
 #include <stdlib.h>
-#include "TSPacket.h"
+#include "TSFile.h"
 
 #define MPEGTS_CLOCK_RATE 90000
 #define SPACEX_PID 0x3e8
@@ -17,12 +17,24 @@ unsigned int numFixedAutoInterpolate = 0;
 unsigned int numFixedPayloadOrder    = 0;
 unsigned int numFixedBadPCR          = 0;
 unsigned int lastDataPCC             = 0xff;
+unsigned int payloadDisplayWidth     = 32;
+unsigned int afDisplayWidth          = 32;
+unsigned int numSkipOnOutput         = 0;
 unsigned long long int lastPCR       = 0;
 unsigned long long int lastPTS       = 0;
-bool outputting       = false;
-bool optionFix        = true;
-bool optionTSRealign  = false;
-bool shownPCCDiscon   = false;
+bool outputting        = false;
+bool optionFix         = true;
+bool optionFixMP4AF    = false;
+bool optionTSRealign   = false;
+bool optionDumpAF      = false;
+bool optionFrameInfo   = false;
+bool optionPrintMP4    = true;
+bool optionPrintOffset = true;
+bool shownPCCDiscon    = false;
+
+// MPEG4 decoding state
+unsigned long long int mp4_lastPCR = 0;
+unsigned int mp4_startPos = 0;
 
 //----------------------------------------------------------------------------
 double
@@ -73,11 +85,53 @@ pidIsValid(unsigned int pid)
 }
 
 //----------------------------------------------------------------------------
-bool
-processPacket(TSPacket* packetBuffer, long int whichOne, FILE* ofd, FILE* mp4fd)
+void
+printAFAndPayload(TSPacket& p)
 {
-  TSPacket p = packetBuffer[whichOne];
-  printf("Packet %ld at 0x%08x: ", whichOne, p.getFileOffset());
+  if (p.adaptationField() != NULL)
+  {
+    printf("AF[%u] ", p.afLen());
+    if (optionDumpAF)
+    {
+      const unsigned char* af = p.adaptationField();
+      unsigned int i;
+      unsigned int afSize = p.afLen() + 1;  // +1 is length byte at start
+      unsigned int sz = afSize;
+      if (sz > afDisplayWidth) sz = afDisplayWidth;
+
+      printf("(");
+      for(i=afSize - sz; i < afSize; ++i)
+      {
+        printf("%02x", af[i]);
+      }
+      printf(") ");
+    }
+  }
+
+  if (p.hasPayload())
+  {
+    unsigned int sz = p.getPayloadSize();
+    if (sz > payloadDisplayWidth) sz = payloadDisplayWidth;
+    
+    printf("Pay%d:", p.payloadContinuityCounter());
+    for(unsigned int i=0; i < sz; ++i)
+    {
+      printf("%02x", p.payload()[i]);
+    }
+    printf(" ");
+  }
+}
+
+//----------------------------------------------------------------------------
+bool
+processPacket(TSFile& tsFile, long int whichOne, FILE* ofd, FILE* mp4fd)
+{
+  TSPacket p = tsFile[whichOne];
+  
+  if (optionPrintOffset)
+  {
+    printf("Packet %ld at 0x%08x: ", whichOne, p.getFileOffset());
+  }
 
   if (!p.isValid())
   {
@@ -91,17 +145,7 @@ processPacket(TSPacket* packetBuffer, long int whichOne, FILE* ofd, FILE* mp4fd)
   if (p.getPRI())      printf("PRI ");
   if (p.isScrambled()) printf("SCR ");
 
-  if (p.adaptationField() != NULL) printf("AF[%u] ", p.afLen());
-
-  if (p.hasPayload())
-  {
-    printf("Pay%d:", p.payloadContinuityCounter());
-    for(int i=0; i < 32; ++i)
-    {
-      printf("%02x", p.payload()[i]);
-    }
-    printf(" ");
-  }
+  printAFAndPayload(p);
 
   unsigned long long int ticks;
   if (p.hasPCR())
@@ -139,8 +183,28 @@ processPacket(TSPacket* packetBuffer, long int whichOne, FILE* ofd, FILE* mp4fd)
     
     //unsigned int dstpid = ((p.payload()[9] & 0x1f) << 8) | p.payload()[10];
   }
+
+  // MP4 decoding state
+  if (optionPrintMP4
+   && (p.pid() != 0)
+   && (p.pid() != 0x20)
+   && (p.pid() != 0x1fff)
+   && p.hasPayload())
+  {
+    // It's a data packet
+    printf("MP4 frame@%u bytes %u-%u (@%u)",
+      p.mp4_framePCR,
+      p.mp4_startPos,
+      p.mp4_startPos + p.mp4_payloadSize,
+      p.mp4_payloadOffset);
+  }
   
   printf("\n");
+  
+  if (ofd != NULL)
+  {
+    fwrite(p.getData(), TS_PACKET_SIZE, 1, ofd);
+  }
   
   if (!pidIsValid(p.pid())) return(false);
   
@@ -158,17 +222,19 @@ processPacket(TSPacket* packetBuffer, long int whichOne, FILE* ofd, FILE* mp4fd)
     }
     lastDataPCC = p.payloadContinuityCounter();
   }
-  
-  if (ofd != NULL)
-  {
-    fwrite(p.getData(), TS_PACKET_SIZE, 1, ofd);
-  }
 
   if ((mp4fd != NULL)
    && p.hasPayload()
    && (p.pid() == SPACEX_PID))
   {
-    fwrite(p.payload(), p.getPayloadSize(), 1, mp4fd);
+    if (p.getPUSI())
+    {
+      fwrite(p.payload() + 16, p.getPayloadSize() - 16, 1, mp4fd);
+    }
+    else
+    {
+      fwrite(p.payload(), p.getPayloadSize(), 1, mp4fd);
+    }
   }
   
   return(true);
@@ -278,27 +344,27 @@ repairPID(TSPacket& packet)
 
 //----------------------------------------------------------------------------
 void
-fixPacket(TSPacket* packetBuffer, unsigned int packetNum,
+fixPacket(TSFile& tsFile, unsigned int packetNum,
   unsigned int pid, unsigned int counter)
 {
-  packetBuffer[packetNum].setValid();
-  packetBuffer[packetNum].setPID(pid);
-  packetBuffer[packetNum].setPayloadFlag();
-  packetBuffer[packetNum].setPayloadContinuityCounter(counter & 0x0f);
+  tsFile[packetNum].setValid();
+  tsFile[packetNum].setPID(pid);
+  tsFile[packetNum].setPayloadFlag();
+  tsFile[packetNum].setPayloadContinuityCounter(counter & 0x0f);
 }
 
 //----------------------------------------------------------------------------
 void
-fixBetween(TSPacket* packetBuffer, unsigned int startPacket, unsigned int endPacket)
+fixBetween(TSFile& tsFile, unsigned int startPacket, unsigned int endPacket)
 {
   unsigned int i;
-  unsigned int pid = packetBuffer[startPacket].pid();
-  unsigned int counter = packetBuffer[startPacket].payloadContinuityCounter();
+  unsigned int pid = tsFile[startPacket].pid();
+  unsigned int counter = tsFile[startPacket].payloadContinuityCounter();
 
   for(i = startPacket + 1; i < endPacket; ++i)
   {
     ++counter;
-    fixPacket(packetBuffer, i, pid, counter);
+    fixPacket(tsFile, i, pid, counter);
   }
 }
 
@@ -324,18 +390,17 @@ isInterpolateBadPacket(TSPacket& packet)
 // Assume start packet is bad, find a run of invalid packets that end in a
 // good packet that's all correct
 bool
-canAutoFix(TSPacket* packetBuffer, unsigned int numPackets,
-  unsigned int startPacket, unsigned int pid)
+canAutoFix(TSFile& tsFile, unsigned int startPacket, unsigned int pid)
 {
   unsigned int packetNum;
-  unsigned int counter = packetBuffer[startPacket-1].payloadContinuityCounter();
+  unsigned int counter = tsFile[startPacket-1].payloadContinuityCounter();
 
-  for(packetNum = startPacket; packetNum < numPackets; ++packetNum)
+  for(packetNum = startPacket; packetNum < tsFile.getNumPackets(); ++packetNum)
   {
     ++counter;
-    if (isInterpolateGoodPacket(packetBuffer[packetNum], pid))
+    if (isInterpolateGoodPacket(tsFile[packetNum], pid))
     {
-      if ((counter & 0xf) == packetBuffer[packetNum].payloadContinuityCounter())
+      if ((counter & 0xf) == tsFile[packetNum].payloadContinuityCounter())
       {
         return(true);
       }
@@ -351,21 +416,21 @@ canAutoFix(TSPacket* packetBuffer, unsigned int numPackets,
 
 //----------------------------------------------------------------------------
 void
-autoInterpolate(TSPacket* packetBuffer, unsigned int numPackets, unsigned int pid)
+autoInterpolate(TSFile& tsFile, unsigned int pid)
 {
   unsigned int i;
   unsigned int counter;
-  for(i=1; i < numPackets; ++i)
+  for(i=1; i < tsFile.getNumPackets(); ++i)
   {
-    if (isInterpolateBadPacket(packetBuffer[i])
-     && isInterpolateGoodPacket(packetBuffer[i-1], pid)
-     && canAutoFix(packetBuffer, numPackets, i, pid))
+    if (isInterpolateBadPacket(tsFile[i])
+     && isInterpolateGoodPacket(tsFile[i-1], pid)
+     && canAutoFix(tsFile, i, pid))
     {
       // We can fix this
-      counter = packetBuffer[i-1].payloadContinuityCounter() + 1;
-      while(isInterpolateBadPacket(packetBuffer[i]))
+      counter = tsFile[i-1].payloadContinuityCounter() + 1;
+      while(isInterpolateBadPacket(tsFile[i]))
       {
-        fixPacket(packetBuffer, i, pid, counter);
+        fixPacket(tsFile, i, pid, counter);
         ++counter;
         ++i;
         ++numFixedAutoInterpolate;
@@ -376,149 +441,277 @@ autoInterpolate(TSPacket* packetBuffer, unsigned int numPackets, unsigned int pi
 
 //----------------------------------------------------------------------------
 bool
-payloadsConsecutive(TSPacket* packetBuffer, unsigned int a)
+payloadsConsecutive(TSFile& tsFile, unsigned int a)
 {
-  return(((packetBuffer[a].payloadContinuityCounter()+1) & 0xf) ==
-           packetBuffer[a+1].payloadContinuityCounter());
+  return(((tsFile[a].payloadContinuityCounter()+1) & 0xf) ==
+           tsFile[a+1].payloadContinuityCounter());
 }
 
 //----------------------------------------------------------------------------
 void
-fixPayloadOrder(TSPacket* packetBuffer, unsigned int numPackets,
-  unsigned int i)
+fixPayloadOrder(TSFile& tsFile, unsigned int i)
 {
-  if ((i + 4) >= numPackets) return;
+  if ((i + 4) >= tsFile.getNumPackets()) return;
   
-  if (packetBuffer[i].isValid() && pidIsValid(packetBuffer[i].pid())
-   && packetBuffer[i+1].isValid() && (packetBuffer[i].pid() == packetBuffer[i+1].pid())
-   && packetBuffer[i+2].isValid() && (packetBuffer[i].pid() == packetBuffer[i+2].pid())
-   && packetBuffer[i+3].isValid() && (packetBuffer[i].pid() == packetBuffer[i+3].pid())
-   && payloadsConsecutive(packetBuffer, i)
-   && payloadsConsecutive(packetBuffer, i+1)
-   && !payloadsConsecutive(packetBuffer, i+2))
+  if (tsFile[i].isValid() && pidIsValid(tsFile[i].pid())
+   && tsFile[i+1].isValid() && (tsFile[i].pid() == tsFile[i+1].pid())
+   && tsFile[i+2].isValid() && (tsFile[i].pid() == tsFile[i+2].pid())
+   && tsFile[i+3].isValid() && (tsFile[i].pid() == tsFile[i+3].pid())
+   && payloadsConsecutive(tsFile, i)
+   && payloadsConsecutive(tsFile, i+1)
+   && !payloadsConsecutive(tsFile, i+2))
   {
     ++numFixedPayloadOrder;
-    packetBuffer[i+3].setPayloadContinuityCounter(packetBuffer[i+2].payloadContinuityCounter() + 1);
+    tsFile[i+3].setPayloadContinuityCounter(tsFile[i+2].payloadContinuityCounter() + 1);
   }
 }
 
 //----------------------------------------------------------------------------
 #define GOOD_PAT_PACKET 4602
 void
-doFakePAT(TSPacket* packetBuffer, unsigned int numPackets)
+doFakePAT(TSFile& tsFile, unsigned int numPackets)
 {
   unsigned int i;
   for(i=0; i < numPackets; ++i)
   {
-    if (packetBuffer[i].isValid()
-     && (packetBuffer[i].pid() == 0)
+    if (tsFile[i].isValid()
+     && (tsFile[i].pid() == 0)
      && (i != GOOD_PAT_PACKET))
     {
-      memcpy(packetBuffer[i].getData(), packetBuffer[GOOD_PAT_PACKET].getData(), TS_PACKET_SIZE);
+      memcpy(tsFile[i].getData(), tsFile[GOOD_PAT_PACKET].getData(), TS_PACKET_SIZE);
     }
   }
 }
 
 //----------------------------------------------------------------------------
 void
-doFixes(TSPacket* packetBuffer, unsigned int numPackets)
+doFixes(TSFile& tsFile)
 {
   // Repair pass: fix bitflip errors in PID
   unsigned int i;
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    repairPID(packetBuffer[i]);
+    repairPID(tsFile[i]);
   }
 
-  for(i=0; i < numPackets-1; ++i)
+  for(i=0; i < tsFile.getNumPackets()-1; ++i)
   {
-    repairInvalidNeighbour(packetBuffer[i], packetBuffer[i+1]);
+    repairInvalidNeighbour(tsFile[i], tsFile[i+1]);
   }
   
-  autoInterpolate(packetBuffer, numPackets, SPACEX_PID);
-  autoInterpolate(packetBuffer, numPackets, 0x1fff);
+  autoInterpolate(tsFile, SPACEX_PID);
+  autoInterpolate(tsFile, 0x1fff);
 
   // Repair pass: set all packets valid that have valid PIDs
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    if (pidIsValid(packetBuffer[i].pid()))
+    if (pidIsValid(tsFile[i].pid()))
     {
-      packetBuffer[i].setValid();
+      tsFile[i].setValid();
     }
   }
 
-  autoInterpolate(packetBuffer, numPackets, SPACEX_PID);
-  autoInterpolate(packetBuffer, numPackets, 0x1fff);
+  autoInterpolate(tsFile, SPACEX_PID);
+  autoInterpolate(tsFile, 0x1fff);
 
   // Repair pass: fix payload order
-  for(i=0; i < numPackets-4; ++i)
+  for(i=0; i < tsFile.getNumPackets()-4; ++i)
   {
-    fixPayloadOrder(packetBuffer, numPackets, i);
+    fixPayloadOrder(tsFile, i);
   }
 
-  autoInterpolate(packetBuffer, numPackets, SPACEX_PID);
-  autoInterpolate(packetBuffer, numPackets, 0x1fff);
+  autoInterpolate(tsFile, SPACEX_PID);
+  autoInterpolate(tsFile, 0x1fff);
 
   // Repair pass: AF can't be longer than packet len - 4
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    if ((packetBuffer[i].adaptationField() != NULL)
-     && (packetBuffer[i].afLen() > (TS_PACKET_SIZE - 4)))
+    if ((tsFile[i].adaptationField() != NULL)
+     && (tsFile[i].afLen() > (TS_PACKET_SIZE - 4)))
     {
-      packetBuffer[i].removeAF();
+      tsFile[i].removeAF();
     }
   }
 
   // Repair pass: PCR can't be greater than 0x710000
   // This is only valid for the SpaceX video!
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    if (packetBuffer[i].isValid()
-     && packetBuffer[i].hasPCR()
-     && ((packetBuffer[i].getPCR() >> 15) > 0x710000))
+    if (tsFile[i].isValid()
+     && tsFile[i].hasPCR()
+     && ((tsFile[i].getPCR() >> 15) > 0x710000))
     {
       // PCR is corrupt, remove the adaptation field as it's
       // probably bad too
-      packetBuffer[i].removeAF();
+      tsFile[i].removeAF();
       ++numFixedBadPCR;
     }
   }
 
   // Repair pass: clear all TEIs, scrambling and PRIs
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    packetBuffer[i].clearTEIFlag();
-    packetBuffer[i].removePRI();
-    packetBuffer[i].removeScramble();
+    tsFile[i].clearTEIFlag();
+    tsFile[i].removePRI();
+    tsFile[i].removeScramble();
   }
 
   // Repair pass: type 0x1fff doesn't have PUSI set or an AF
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    if (packetBuffer[i].isValid()
-     && (packetBuffer[i].pid() == 0x1fff))
+    if (tsFile[i].isValid()
+     && (tsFile[i].pid() == 0x1fff))
     {
-      packetBuffer[i].removePUSI();
-      packetBuffer[i].removeAF();
+      tsFile[i].removePUSI();
+      tsFile[i].removeAF();
+      tsFile[i].setPayloadFlag();
+      tsFile[i].writePadding();
+    }
+  }
+
+  // Repair pass: type 0x0000
+  for(i=0; i < tsFile.getNumPackets(); ++i)
+  {
+    if (tsFile[i].isValid()
+     && (tsFile[i].pid() == 0x0000))
+    {
+      tsFile[i].setPUSI();  // PAT packets have PUSI set
+      tsFile[i].removeAF();
+      tsFile[i].setPayloadFlag();
+      unsigned char* data = tsFile[i].payload();
+      if (data != NULL)
+      {
+        // Good PAT table from SpaceX video
+        data[0]  = 0x00;
+        data[1]  = 0x00;
+        data[2]  = 0xb0;
+        data[3]  = 0x11;
+        data[4]  = 0x00;
+        data[5]  = 0x00;
+        data[6]  = 0xc1;
+        data[7]  = 0x00;
+        data[8]  = 0x00;
+        data[9]  = 0x00;
+        data[10] = 0x00;
+        data[11] = 0xe0;
+        data[12] = 0x10;
+        data[13] = 0x00;
+        data[14] = 0x01;
+        data[15] = 0xe0;
+        data[16] = 0x20;
+        data[17] = 0xd3;
+        data[18] = 0x6a;
+        data[19] = 0xf0;
+        data[20] = 0xac;
+        
+        unsigned int psize = tsFile[i].getPayloadSize();
+        unsigned int offset;
+        for(offset = 21; offset < psize; ++offset)
+        {
+          data[offset] = 0xff;
+        }
+      }
+      else
+      {
+        fprintf(stderr, "Error in packet %d: can't set PAT table!\n", i);
+      }
+    }
+  }
+
+  // Repair pass: type 0x0020
+  for(i=0; i < tsFile.getNumPackets(); ++i)
+  {
+    if (tsFile[i].isValid()
+     && (tsFile[i].pid() == 0x0020))
+    {
+      tsFile[i].setPUSI();  // These packets have PUSI set
+      tsFile[i].removeAF();
+      tsFile[i].setPayloadFlag();
+      unsigned char* data = tsFile[i].payload();
+      if (data != NULL)
+      {
+        // Good PMT table from SpaceX video
+        data[0]  = 0x00;
+        data[1]  = 0x02;
+        data[2]  = 0xb0;
+        data[3]  = 0x1f;
+        data[4]  = 0x00;
+        data[5]  = 0x01;
+        data[6]  = 0xc1;
+        data[7]  = 0x00;
+        data[8]  = 0x00;
+        data[9]  = 0xe3;
+        data[10] = 0xe8;
+        data[11] = 0xf0;
+        data[12] = 0x00;
+        data[13] = 0x10;
+        data[14] = 0xe3;
+        data[15] = 0xe8;
+        data[16] = 0xf0;
+        data[17] = 0x03;
+        data[18] = 0x1b;
+        data[19] = 0x01;
+        data[20] = 0xf5;
+        data[21] = 0x80;
+        data[22] = 0xe3;
+        data[23] = 0xe9;
+        data[24] = 0xf0;
+        data[25] = 0x00;
+        data[26] = 0x81;
+        data[27] = 0xe3;
+        data[28] = 0xf3;
+        data[29] = 0xf0;
+        data[30] = 0x00;
+        data[31] = 0x3f;
+        data[32] = 0x64;
+        data[33] = 0xf1;
+        data[34] = 0x15;
+        
+        unsigned int psize = tsFile[i].getPayloadSize();
+        unsigned int offset;
+        for(offset = 35; offset < psize; ++offset)
+        {
+          data[offset] = 0xff;
+        }
+      }
     }
   }
 
   // Repair pass: SpaceX packets that aren't AF[7] shouldn't have PUSI
-  for(i=0; i < numPackets; ++i)
+  for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    if (packetBuffer[i].isValid()
-     && (packetBuffer[i].pid() == SPACEX_PID)
-     && ((packetBuffer[i].adaptationField() == NULL)
-      || (packetBuffer[i].afLen() != 7)))
+    if (tsFile[i].isValid()
+     && (tsFile[i].pid() == SPACEX_PID)
+     && ((tsFile[i].adaptationField() == NULL)
+      || (tsFile[i].afLen() != 7)))
     {
-      packetBuffer[i].removePUSI();
+      tsFile[i].removePUSI();
+    }
+  }
+
+  // Repair pass: SpaceX packets that have AF but no PUSI are used for
+  // padding at the end of a frame
+  for(i=0; i < tsFile.getNumPackets(); ++i)
+  {
+    if (tsFile[i].isValid()
+     && (tsFile[i].pid() == SPACEX_PID)
+     && (tsFile[i].adaptationField() == NULL)
+     && (!tsFile[i].getPUSI()))
+    {
+      unsigned char* af = tsFile[i].adaptationField();
+      unsigned int offset;
+      if (tsFile[i].afLen() > 1) af[1] = 0;
+      for(offset=2; offset < tsFile[i].afLen(); ++offset)
+      {
+        af[offset] = 0xff;
+      }
     }
   }
 }
 
 //----------------------------------------------------------------------------
 void
-runSingleFix(TSPacket* packetBuffer, std::string cmd)
+runSingleFix(TSFile& tsFile, std::string cmd)
 {
   fprintf(stderr, "Fix: %s\n", cmd.data());
   
@@ -535,39 +728,44 @@ runSingleFix(TSPacket* packetBuffer, std::string cmd)
   
   if (op == "af")
   {
-    packetBuffer[packetNum].setAFLen(atoi(param.data()));
+    tsFile[packetNum].setAFLen(atoi(param.data()));
+  }
+  else if (op == "insert")
+  {
+    tsFile.insertBytes(strtoul(packet.data(), NULL, 16),
+                       strtoul(param.data(), NULL, 10));
   }
   else if (op == "noaf")
   {
-    packetBuffer[packetNum].removeAF();
+    tsFile[packetNum].removeAF();
   }
   else if (op == "nopcr")
   {
-    packetBuffer[packetNum].removePCR();
+    tsFile[packetNum].removePCR();
   }
   else if (op == "nopusi")
   {
-    packetBuffer[packetNum].removePUSI();
+    tsFile[packetNum].removePUSI();
   }
   else if (op == "pay")
   {
-    packetBuffer[packetNum].setPayloadFlag();
-    packetBuffer[packetNum].setPayloadContinuityCounter(atoi(param.data()));
+    tsFile[packetNum].setPayloadFlag();
+    tsFile[packetNum].setPayloadContinuityCounter(atoi(param.data()));
   }
   else if (op == "pcr")
   {
     unsigned long long int newPCR = strtoul(param.data(), NULL, 10);
-    packetBuffer[packetNum].setPCR(newPCR << 15);
+    tsFile[packetNum].setPCR(newPCR << 15);
   }
   else if (op == "pes")
   {
     // User is indicating it's a PES header packet
-    packetBuffer[packetNum].setAFLen(7);
-    packetBuffer[packetNum].setPUSI();
-    packetBuffer[packetNum].setPID(SPACEX_PID);
-    packetBuffer[packetNum].setPayloadFlag();
+    tsFile[packetNum].setAFLen(7);
+    tsFile[packetNum].setPUSI();
+    tsFile[packetNum].setPID(SPACEX_PID);
+    tsFile[packetNum].setPayloadFlag();
     
-    unsigned char* data = packetBuffer[packetNum].payload();
+    unsigned char* data = tsFile[packetNum].payload();
     if (data != NULL)
     {
       data[0] = 0;
@@ -589,7 +787,7 @@ runSingleFix(TSPacket* packetBuffer, std::string cmd)
   }
   else if (op == "pframe")
   {
-    unsigned char* data = packetBuffer[packetNum].payload();
+    unsigned char* data = tsFile[packetNum].payload();
     if (data != NULL)
     {
       // MPEG4 P-frame header
@@ -605,28 +803,33 @@ runSingleFix(TSPacket* packetBuffer, std::string cmd)
   }
   else if (op == "pid")
   {
-    packetBuffer[packetNum].setPID(strtoul(param.data(), NULL, 16));
+    tsFile[packetNum].setPID(strtoul(param.data(), NULL, 16));
   }
   else if (op == "ptsauto")
   {
-    if (!packetBuffer[packetNum].hasPCR())
+    if (!tsFile[packetNum].hasPCR())
     {
       fprintf(stderr, "Error in packet %d: can't set ptsauto, no PCR!\n", packetNum);
     }
     else
     {
-      packetBuffer[packetNum].setPTS((packetBuffer[packetNum].getPCR() >> 15) - 10000);
+      tsFile[packetNum].setPTS((tsFile[packetNum].getPCR() >> 15) - 10000);
     }
   }
   else if (op == "pusi")
   {
-    packetBuffer[packetNum].setPUSI();
+    tsFile[packetNum].setPUSI();
+  }
+  else if (op == "valid")
+  {
+    tsFile[packetNum].setValid();
+    tsFile[packetNum].clearTEIFlag();
   }
 }
 
 //----------------------------------------------------------------------------
 void
-runFixCommand(TSPacket* packetBuffer, std::string fixCommand)
+runFixCommand(TSFile& tsFile, std::string fixCommand)
 {
   std::istringstream iss(fixCommand);
   std::string singleCmd;
@@ -634,8 +837,86 @@ runFixCommand(TSPacket* packetBuffer, std::string fixCommand)
   do
   {
     std::getline(iss, singleCmd, '/');
-    if (singleCmd != "") runSingleFix(packetBuffer, singleCmd);
+    if (singleCmd != "") runSingleFix(tsFile, singleCmd);
   } while(!iss.eof());
+}
+
+//----------------------------------------------------------------------------
+bool
+isFrameStart(TSPacket& packet)
+{
+  return((packet.pid() == 0x3e8) && packet.getPUSI());
+}
+
+//----------------------------------------------------------------------------
+bool
+isIFrame(TSPacket& packet)
+{
+  if (!isFrameStart(packet)) return(false);
+  
+  unsigned char* payload = packet.payload();
+  return(payload[19] == 0xb0);
+}
+
+//----------------------------------------------------------------------------
+void
+processMP4SingleFrame(TSFile& tsFile, unsigned int startPacket, unsigned int frameNum)
+{
+  unsigned int endPacket = startPacket;
+  unsigned int i;
+  
+  for(i=startPacket + 1; (i < tsFile.getNumPackets()) && !isFrameStart(tsFile[i]); ++i)
+  {
+    if (tsFile[i].pid() == 0x3e8) endPacket = i;
+  }
+  
+  if (optionFixMP4AF)
+  {
+    // Remove AF from all data packets except first and last in frame
+    for(i=startPacket + 1; i < endPacket; ++i)
+    {
+      tsFile[i].removeAF();
+    }
+  }
+
+  if (optionFrameInfo)
+  {
+    printf("%c-Frame %d (packets %d - %d): Time %f ",
+      isIFrame(tsFile[startPacket])? 'I': 'P',
+      frameNum, startPacket, endPacket,
+      clockToSeconds(tsFile[startPacket].getPCR() >> 15));
+
+    // Check af[1] is 0x00 on end packet
+    if ((tsFile[endPacket].adaptationField() != NULL)
+     && (tsFile[endPacket].afLen() > 0))
+    {
+      unsigned char afFlags = tsFile[endPacket].adaptationField()[1];
+      if (afFlags != 0)
+      {
+        printf("BAD af[1]:%02x ", (unsigned int)afFlags);
+      }
+    }
+    
+    printAFAndPayload(tsFile[endPacket]);
+    
+    printf("\n");
+  }
+}
+
+//----------------------------------------------------------------------------
+void
+processMP4(TSFile& tsFile)
+{
+  unsigned int i;
+  unsigned int frameNum = 0;
+  for(i=0; i < tsFile.getNumPackets(); ++i)
+  {
+    if (isFrameStart(tsFile[i]))
+    {
+      ++frameNum;
+      processMP4SingleFrame(tsFile, i, frameNum);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------
@@ -645,12 +926,7 @@ processFile(std::string inputFilename,
   std::string outputTSFilename,
   std::string outputMP4Filename)
 {
-  FILE* fd = fopen(inputFilename.data(), "r");
-  if (fd == NULL)
-  {
-    fprintf(stderr, "Cannot open input file '%s'\n", inputFilename.data());
-    return(1);
-  }
+  TSFile tsFile;
 
   FILE* ofd = NULL;
   if (outputTSFilename != "")
@@ -674,45 +950,34 @@ processFile(std::string inputFilename,
     }
   }
  
-  fseek(fd, 0L, SEEK_END);
-  long int fileSize = ftell(fd);
-  fseek(fd, 0L, SEEK_SET);
-  
-  unsigned char* fileData = new unsigned char[fileSize];
-  fread(fileData, fileSize, 1, fd);
-  fclose(fd);
-  
-  long int i;
-  unsigned int numPackets;
-  TSPacket packetBuffer[32768];
-  
-  // Create packet buffer
-  for(numPackets=0; (numPackets < 32768) && (getPacketOffset(numPackets) < fileSize); ++numPackets)
-  {
-    packetBuffer[numPackets].setData(fileData, getPacketOffset(numPackets));
-  }
+  if (!tsFile.loadFile(inputFilename)) return(1);
+
+  if (fixCommand != "") runFixCommand(tsFile, fixCommand);
 
   if (optionFix)
   {
     // We're not just viewing the file, we're trying to repair it
-    if (fixCommand != "") runFixCommand(packetBuffer, fixCommand);
-    doFixes(packetBuffer, numPackets);
+    doFixes(tsFile);
     fprintf(stderr, "Num auto interpolate: %d\n", numFixedAutoInterpolate);
     fprintf(stderr, "   Num payload order: %d\n", numFixedPayloadOrder);
     fprintf(stderr, "         Num bad PCR: %d\n", numFixedBadPCR);
   }
+  
+  // Work out the MP4 info
+  tsFile.scanMP4();
+  processMP4(tsFile);
     
   // Normal processing pass
   bool foundBad = false;
-  for(i=0; i < numPackets; ++i)
+  for(unsigned int i=numSkipOnOutput; i < tsFile.getNumPackets(); ++i)
   {
-    if (!processPacket(packetBuffer, i, ofd, mp4fd))
+    if (!processPacket(tsFile, i, ofd, mp4fd))
     {
       if (!foundBad)
       {
         foundBad = true;
         printf("----- Stream is bad from here onwards -----\n");
-        fprintf(stderr, "Stream is bad from packet %ld onwards\n", i);
+        fprintf(stderr, "Stream is bad from packet %d onwards\n", i);
       }
     }
   }
@@ -737,9 +1002,17 @@ main(int argc, char** argv)
   {
     if (argv[i][0] == '-')
     {
-      if      (strcmp(argv[i], "-nofix")      == 0) optionFix        = false;
-      else if (strcmp(argv[i], "-realign")    == 0) optionTSRealign  = true;
+      if      (strcmp(argv[i], "-nofix")      == 0) optionFix         = false;
+      else if (strcmp(argv[i], "-realign")    == 0) optionTSRealign   = true;
+      else if (strcmp(argv[i], "-dumpaf")     == 0) optionDumpAF      = true;
+      else if (strcmp(argv[i], "-fixmp4af")   == 0) optionFixMP4AF    = true;
+      else if (strcmp(argv[i], "-frameinfo")  == 0) optionFrameInfo   = true;
+      else if (strcmp(argv[i], "-noprintmp4") == 0) optionPrintMP4    = false;
+      else if (strcmp(argv[i], "-noprintoff") == 0) optionPrintOffset = false;
       else if (strncmp(argv[i], "-fix:", 5)   == 0) fixCommand = argv[i] + 5;
+      else if (strncmp(argv[i], "-pdw:", 5)   == 0) payloadDisplayWidth = atoi(argv[i] + 5);
+      else if (strncmp(argv[i], "-adw:", 5)   == 0) afDisplayWidth = atoi(argv[i] + 5);
+      else if (strncmp(argv[i], "-skip:", 6)  == 0) numSkipOnOutput = atoi(argv[i] + 6);
       else
       {
         fprintf(stderr, "Unexpected option '%s'\n", argv[i]);

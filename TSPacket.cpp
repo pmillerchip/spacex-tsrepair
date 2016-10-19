@@ -8,8 +8,12 @@
 // Constructor
 TSPacket::TSPacket()
 {
-  data = 0;
-  fileOffset = 0;
+  data              = 0;
+  fileOffset        = 0;
+  mp4_framePCR      = 0;
+  mp4_startPos      = 0;
+  mp4_payloadSize   = 0;
+  mp4_payloadOffset = 0;
 }
 
 //----------------------------------------------------------------------------
@@ -183,11 +187,20 @@ TSPacket::payload() const
 {
   if ((data[3] & 0x10) == 0) return((unsigned char*)0);
   
+  return(data + getPayloadOffset());
+}
+
+//----------------------------------------------------------------------------
+unsigned int
+TSPacket::getPayloadOffset() const
+{
+  if ((data[3] & 0x10) == 0) return(0);
+  
   unsigned char* af = adaptationField();
-  if (af == (unsigned char*)0) return(data + 4);
+  if (af == (unsigned char*)0) return(4);
   
   int afLen = (int)af[0];
-  return(af + afLen + 1);
+  return(4 + 1 + afLen);
 }
 
 //----------------------------------------------------------------------------
@@ -223,8 +236,8 @@ TSPacket::getPayloadSize() const
   if (af == (const unsigned char*)0) return(TS_PACKET_SIZE - 4);
   
   int afLen = (int)af[0];
-  if (afLen > TS_PACKET_SIZE) return(0);
-  return(TS_PACKET_SIZE - afLen);
+  if (afLen > (TS_PACKET_SIZE - 4 - 1)) return(0);
+  return(TS_PACKET_SIZE - afLen - 4 - 1);
 }
 
 //----------------------------------------------------------------------------
@@ -334,6 +347,19 @@ void
 TSPacket::clearTEIFlag()
 {
   data[1] &= 0x7f;
+}
+
+//----------------------------------------------------------------------------
+void
+TSPacket::writePadding()
+{
+  if (!hasPayload()) return;
+  
+  unsigned int offset = getPayloadOffset();
+  while(offset < TS_PACKET_SIZE)
+  {
+    data[offset++] = 0xff;
+  }
 }
 
 

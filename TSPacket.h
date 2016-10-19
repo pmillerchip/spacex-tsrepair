@@ -69,6 +69,9 @@ class TSPacket
     // Get the size of the payload
     unsigned int           getPayloadSize() const;
     
+    // Get the offset of the payload from the start of the packet
+    unsigned int           getPayloadOffset() const;
+    
     // Returns true if the packet is marked as scrambled
     bool                   isScrambled() const;
     
@@ -89,6 +92,13 @@ class TSPacket
     void                   removePUSI();
     void                   removeScramble();
     void                   setAFLen(unsigned int);
+    void                   writePadding();
+
+    // Variables
+    unsigned int           mp4_framePCR;
+    unsigned int           mp4_startPos;
+    unsigned int           mp4_payloadSize;
+    unsigned int           mp4_payloadOffset;
 
   private:
     // Variables

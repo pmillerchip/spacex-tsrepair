@@ -2,6 +2,7 @@ CXXFLAGS = -g -Wall
 LDFLAGS =
 
 SOURCES=\
+  TSFile.cpp\
   TSPacket.cpp\
   main.cpp
 
