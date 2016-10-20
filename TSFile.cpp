@@ -18,6 +18,7 @@ TSFile::TSFile()
 // Destructor
 TSFile::~TSFile()
 {
+  delete [] fileData;
 }
 
 //----------------------------------------------------------------------------
