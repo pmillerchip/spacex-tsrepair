@@ -88,7 +88,7 @@ pidIsValid(unsigned int pid)
 void
 printAFAndPayload(TSPacket& p)
 {
-  if (p.adaptationField() != NULL)
+  if (p.adaptationField() != nullptr)
   {
     printf("AF[%u] ", p.afLen());
     if (optionDumpAF)
@@ -201,7 +201,7 @@ processPacket(TSFile& tsFile, long int whichOne, FILE* ofd, FILE* mp4fd)
   
   printf("\n");
   
-  if (ofd != NULL)
+  if (ofd != nullptr)
   {
     fwrite(p.getData(), TS_PACKET_SIZE, 1, ofd);
   }
@@ -223,7 +223,7 @@ processPacket(TSFile& tsFile, long int whichOne, FILE* ofd, FILE* mp4fd)
     lastDataPCC = p.payloadContinuityCounter();
   }
 
-  if ((mp4fd != NULL)
+  if ((mp4fd != nullptr)
    && p.hasPayload()
    && (p.pid() == SPACEX_PID))
   {
@@ -526,7 +526,7 @@ doFixes(TSFile& tsFile)
   // Repair pass: AF can't be longer than packet len - 4
   for(i=0; i < tsFile.getNumPackets(); ++i)
   {
-    if ((tsFile[i].adaptationField() != NULL)
+    if ((tsFile[i].adaptationField() != nullptr)
      && (tsFile[i].afLen() > (TS_PACKET_SIZE - 4)))
     {
       tsFile[i].removeAF();
@@ -579,7 +579,7 @@ doFixes(TSFile& tsFile)
       tsFile[i].removeAF();
       tsFile[i].setPayloadFlag();
       unsigned char* data = tsFile[i].payload();
-      if (data != NULL)
+      if (data != nullptr)
       {
         // Good PAT table from SpaceX video
         data[0]  = 0x00;
@@ -628,7 +628,7 @@ doFixes(TSFile& tsFile)
       tsFile[i].removeAF();
       tsFile[i].setPayloadFlag();
       unsigned char* data = tsFile[i].payload();
-      if (data != NULL)
+      if (data != nullptr)
       {
         // Good PMT table from SpaceX video
         data[0]  = 0x00;
@@ -682,7 +682,7 @@ doFixes(TSFile& tsFile)
   {
     if (tsFile[i].isValid()
      && (tsFile[i].pid() == SPACEX_PID)
-     && ((tsFile[i].adaptationField() == NULL)
+     && ((tsFile[i].adaptationField() == nullptr)
       || (tsFile[i].afLen() != 7)))
     {
       tsFile[i].removePUSI();
@@ -695,7 +695,7 @@ doFixes(TSFile& tsFile)
   {
     if (tsFile[i].isValid()
      && (tsFile[i].pid() == SPACEX_PID)
-     && (tsFile[i].adaptationField() == NULL)
+     && (tsFile[i].adaptationField() == nullptr)
      && (!tsFile[i].getPUSI()))
     {
       unsigned char* af = tsFile[i].adaptationField();
@@ -732,8 +732,8 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   }
   else if (op == "insert")
   {
-    tsFile.insertBytes(strtoul(packet.data(), NULL, 16),
-                       strtoul(param.data(), NULL, 10));
+    tsFile.insertBytes(strtoul(packet.data(), nullptr, 16),
+                       strtoul(param.data(), nullptr, 10));
   }
   else if (op == "noaf")
   {
@@ -754,7 +754,7 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   }
   else if (op == "pcr")
   {
-    unsigned long long int newPCR = strtoul(param.data(), NULL, 10);
+    unsigned long long int newPCR = strtoul(param.data(), nullptr, 10);
     tsFile[packetNum].setPCR(newPCR << 15);
   }
   else if (op == "pes")
@@ -766,7 +766,7 @@ runSingleFix(TSFile& tsFile, std::string cmd)
     tsFile[packetNum].setPayloadFlag();
     
     unsigned char* data = tsFile[packetNum].payload();
-    if (data != NULL)
+    if (data != nullptr)
     {
       data[0] = 0;
       data[1] = 0;
@@ -788,7 +788,7 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   else if (op == "pframe")
   {
     unsigned char* data = tsFile[packetNum].payload();
-    if (data != NULL)
+    if (data != nullptr)
     {
       // MPEG4 P-frame header
       data[16] = 0x00;
@@ -803,7 +803,7 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   }
   else if (op == "pid")
   {
-    tsFile[packetNum].setPID(strtoul(param.data(), NULL, 16));
+    tsFile[packetNum].setPID(strtoul(param.data(), nullptr, 16));
   }
   else if (op == "ptsauto")
   {
@@ -887,7 +887,7 @@ processMP4SingleFrame(TSFile& tsFile, unsigned int startPacket, unsigned int fra
       clockToSeconds(tsFile[startPacket].getPCR() >> 15));
 
     // Check af[1] is 0x00 on end packet
-    if ((tsFile[endPacket].adaptationField() != NULL)
+    if ((tsFile[endPacket].adaptationField() != nullptr)
      && (tsFile[endPacket].afLen() > 0))
     {
       unsigned char afFlags = tsFile[endPacket].adaptationField()[1];
@@ -928,22 +928,22 @@ processFile(std::string inputFilename,
 {
   TSFile tsFile;
 
-  FILE* ofd = NULL;
+  FILE* ofd = nullptr;
   if (outputTSFilename != "")
   {
     ofd = fopen(outputTSFilename.data(), "w");
-    if (ofd == NULL)
+    if (ofd == nullptr)
     {
       fprintf(stderr, "Cannot open TS output file '%s'\n", outputTSFilename.data());
       return(1);
     }
   }
 
-  FILE* mp4fd = NULL;
+  FILE* mp4fd = nullptr;
   if (outputMP4Filename != "")
   {
     mp4fd = fopen(outputMP4Filename.data(), "w");
-    if (mp4fd == NULL)
+    if (mp4fd == nullptr)
     {
       fprintf(stderr, "Cannot open MP4 output file '%s'\n", outputMP4Filename.data());
       return(1);
@@ -982,8 +982,8 @@ processFile(std::string inputFilename,
     }
   }
   
-  if (ofd != NULL) fclose(ofd);
-  if (mp4fd != NULL) fclose(mp4fd);
+  if (ofd != nullptr) fclose(ofd);
+  if (mp4fd != nullptr) fclose(mp4fd);
   return(0);
 }
 

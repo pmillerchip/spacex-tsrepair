@@ -8,8 +8,6 @@
 #include "TSPacket.h"
 #include <string>
 
-#define TSFILE_BUFFER_SIZE 32768
-
 //----------------------------------------------------------------------------
 class TSFile
 {
@@ -37,7 +35,7 @@ class TSFile
     void                   setPacketPointers();
     
     // Variables
-    TSPacket               packetBuffer[TSFILE_BUFFER_SIZE];
+    TSPacket*              packetBuffer;
     unsigned char*         fileData;
     unsigned int           fileSize;
     unsigned int           numPackets;

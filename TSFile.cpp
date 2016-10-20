@@ -8,10 +8,9 @@
 
 //----------------------------------------------------------------------------
 // Constructor
-TSFile::TSFile()
+TSFile::TSFile(): packetBuffer{nullptr}, fileData{nullptr}, fileSize{0},
+  numPackets{0}
 {
-  fileSize = 0;
-  fileData = NULL;
 }
 
 //----------------------------------------------------------------------------
@@ -19,6 +18,7 @@ TSFile::TSFile()
 TSFile::~TSFile()
 {
   delete [] fileData;
+  delete [] packetBuffer;
 }
 
 //----------------------------------------------------------------------------
@@ -26,7 +26,7 @@ bool
 TSFile::loadFile(std::string inputFilename)
 {
   FILE* fd = fopen(inputFilename.data(), "r");
-  if (fd == NULL)
+  if (fd == nullptr)
   {
     fprintf(stderr, "Cannot open input file '%s'\n", inputFilename.data());
     return(false);
@@ -36,6 +36,7 @@ TSFile::loadFile(std::string inputFilename)
   fileSize = ftell(fd);
   fseek(fd, 0L, SEEK_SET);
   
+  delete [] fileData;
   fileData = new unsigned char[fileSize];
   fread(fileData, fileSize, 1, fd);
   fclose(fd);
@@ -48,9 +49,14 @@ TSFile::loadFile(std::string inputFilename)
 void
 TSFile::setPacketPointers()
 {
-  for(numPackets=0; getPacketOffset(numPackets) < fileSize; ++numPackets)
+  numPackets = fileSize / TS_PACKET_SIZE;
+
+  delete [] packetBuffer;
+  packetBuffer = new TSPacket[numPackets];
+
+  for(unsigned int i=0; i < numPackets; ++i)
   {
-    packetBuffer[numPackets].setData(fileData, getPacketOffset(numPackets));
+    packetBuffer[i].setData(fileData, getPacketOffset(i));
   }
 }
 
@@ -87,7 +93,7 @@ TSFile::scanMP4()
       
       // Detect start of frame
       if (p.getPUSI()
-       && (p.adaptationField() != NULL)
+       && (p.adaptationField() != nullptr)
        && (p.afLen() == 7))
       {
         // Frame start
