@@ -36,16 +36,16 @@ class TSPacket
     // Returns the payload continuity counter
     unsigned int           payloadContinuityCounter() const;
     
-    // Returns a pointer to the adaption field, or NULL if none exists
+    // Returns a pointer to the adaption field, or nullptr if none exists
     unsigned char*         adaptationField() const;
     
     // Returns the length of the adaptation field
     unsigned int           afLen() const;
     
-    // Returns a pointer to the payload, or NULL if none exists
+    // Returns a pointer to the payload, or nullptr if none exists
     unsigned char*         payload() const;
     
-    // Returns a pointer to the raw data, or NULL if none exists
+    // Returns a pointer to the raw data, or nullptr if none exists
     unsigned char*         getData() const { return(data); }
 
     // Returns true if the packet has a PCR field, false if not

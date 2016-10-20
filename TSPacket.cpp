@@ -6,14 +6,14 @@
 
 //----------------------------------------------------------------------------
 // Constructor
-TSPacket::TSPacket()
+TSPacket::TSPacket():
+  mp4_framePCR{0},
+  mp4_startPos{0},
+  mp4_payloadSize{0},
+  mp4_payloadOffset{0},
+  data{nullptr},
+  fileOffset{0}
 {
-  data              = 0;
-  fileOffset        = 0;
-  mp4_framePCR      = 0;
-  mp4_startPos      = 0;
-  mp4_payloadSize   = 0;
-  mp4_payloadOffset = 0;
 }
 
 //----------------------------------------------------------------------------
