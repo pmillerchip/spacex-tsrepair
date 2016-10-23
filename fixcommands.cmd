@@ -23,10 +23,22 @@
 213,pid,1fff
 214,pid,1fff
 215,pid,1fff
-216,pes
 216,pay,0
+216,pes
+216,pcr,1
 217,pid,3e8
+217,pay,1
 218,pid,3e8
 218,pay,2
 219,noaf
+230,pid,3e8
+231,pid,3e8
+231,pay,15
+232,pid,3e8
+232,pay,0
+238,pid,3e8
+238,pay,6
+246,pay,14
+248,pay,0
+249,pay,1
 

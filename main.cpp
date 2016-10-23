@@ -740,9 +740,17 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   {
     tsFile[packetNum].removeAF();
   }
+  else if (op == "nopri")
+  {
+    tsFile[packetNum].removePRI();
+  }
   else if (op == "nopcr")
   {
     tsFile[packetNum].removePCR();
+  }
+  else if (op == "noscr")
+  {
+    tsFile[packetNum].removeScramble();
   }
   else if (op == "nopusi")
   {
@@ -761,10 +769,11 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   else if (op == "pes")
   {
     // User is indicating it's a PES header packet
+    tsFile[packetNum].setValid();
+    tsFile[packetNum].setPayloadFlag();
+    tsFile[packetNum].setPID(SPACEX_PID);
     tsFile[packetNum].setAFLen(7);
     tsFile[packetNum].setPUSI();
-    tsFile[packetNum].setPID(SPACEX_PID);
-    tsFile[packetNum].setPayloadFlag();
     
     unsigned char* data = tsFile[packetNum].payload();
     if (data != nullptr)
@@ -799,7 +808,7 @@ runSingleFix(TSFile& tsFile, std::string cmd)
     }
     else
     {
-      fprintf(stderr, "Error in packet %d: can't set PES data!\n", packetNum);
+      fprintf(stderr, "Error in packet %d: can't set P-frame data!\n", packetNum);
     }
   }
   else if (op == "pid")
