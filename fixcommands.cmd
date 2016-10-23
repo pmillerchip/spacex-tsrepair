@@ -16,6 +16,16 @@
 193,pid,20
 194,pid,1fff
 195,pay,1
+209,pid,1fff
+210,pid,1fff
+211,pid,1fff
+212,pid,1fff
+213,pid,1fff
+214,pid,1fff
+215,pid,1fff
+216,pes
+216,pay,0
+217,pid,3e8
 218,pid,3e8
 218,pay,2
 219,noaf

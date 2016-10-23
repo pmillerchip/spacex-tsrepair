@@ -20,7 +20,7 @@ $(TSFILE_ALIGNED): $(TSFILE) $(EXECUTABLE)
 	./$(EXECUTABLE) $(TSFILE) -noprintmp4 -nofix -fix:382a8,insert,56/d7250,insert,56/215d4c,insert,56/3571ec,insert,56/3dc0ac,insert,56 $@ > aligned.txt
 
 $(TSFILE_FIXED): $(TSFILE_ALIGNED) $(EXECUTABLE) fixcommands.cmd
-	./$(EXECUTABLE) $(TSFILE) -noprintmp4 -fix:@fixcommands.cmd $@ > fixed.txt
+	./$(EXECUTABLE) $(TSFILE_ALIGNED) -noprintmp4 -fix:@fixcommands.cmd $@ > fixed.txt
 
 clean:
 	rm -f *.o *.txt $(EXECUTABLE) $(TSFILE_ALIGNED) $(TSFILE_FIXED) *~
