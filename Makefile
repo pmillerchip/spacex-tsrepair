@@ -23,7 +23,7 @@ $(TSFILE_FIXED): $(TSFILE_ALIGNED) $(EXECUTABLE) fixcommands.cmd
 	./$(EXECUTABLE) $(TSFILE) -noprintmp4 -fix:@fixcommands.cmd $@ > fixed.txt
 
 clean:
-	rm -f *.o *.txt $(EXECUTABLE) $(TSFILE_ALIGNED) *~
+	rm -f *.o *.txt $(EXECUTABLE) $(TSFILE_ALIGNED) $(TSFILE_FIXED) *~
 
 $(TSFILE):
 	wget -O $@ http://www.spacex.com/sites/spacex/files/raw.ts
