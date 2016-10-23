@@ -4,6 +4,8 @@
 *.o
 *.orig
 *.txt
+fixed.ts
 raw.ts
+raw_aligned.ts
 tsrepair
 

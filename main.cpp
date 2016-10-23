@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <string.h>
 #include <stdlib.h>
 #include "TSFile.h"
@@ -215,7 +216,7 @@ processPacket(TSFile& tsFile, long int whichOne, FILE* ofd, FILE* mp4fd)
     {
       if ((p.payloadContinuityCounter() != ((lastDataPCC + 1) & 0xf)) && !shownPCCDiscon)
       {
-        printf("PCC discontinuity!\r\n");
+        printf("PCC discontinuity!\n");
         shownPCCDiscon = true;
         return(false);
       }
@@ -831,14 +832,37 @@ runSingleFix(TSFile& tsFile, std::string cmd)
 void
 runFixCommand(TSFile& tsFile, std::string fixCommand)
 {
-  std::istringstream iss(fixCommand);
   std::string singleCmd;
-  
-  do
+
+  if (fixCommand[0] == '@')
   {
-    std::getline(iss, singleCmd, '/');
-    if (singleCmd != "") runSingleFix(tsFile, singleCmd);
-  } while(!iss.eof());
+    // Read commands from a file, one command per line
+    std::string filename = fixCommand.data() + 1;
+    std::ifstream cmdFile(filename);
+    if (!cmdFile.is_open())
+    {
+      fprintf(stderr, "Error: Could not open input file '%s'\n", filename.data());
+      return;
+    }
+
+    do
+    {
+      std::getline(cmdFile, singleCmd);
+      if (singleCmd != "") runSingleFix(tsFile, singleCmd);
+    } while(!cmdFile.eof());
+    cmdFile.close();
+  }
+  else
+  {
+    // Read commands from a string on the command line, separated by '/'
+    std::istringstream iss(fixCommand);
+
+    do
+    {
+      std::getline(iss, singleCmd, '/');
+      if (singleCmd != "") runSingleFix(tsFile, singleCmd);
+    } while(!iss.eof());
+  }
 }
 
 //----------------------------------------------------------------------------
