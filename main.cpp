@@ -756,6 +756,17 @@ runSingleFix(TSFile& tsFile, std::string cmd)
   {
     tsFile[packetNum].removePUSI();
   }
+  else if (op == "null")
+  {
+    // User is indicating it's a null packet
+    tsFile[packetNum].setValid();
+    tsFile[packetNum].setPayloadFlag();
+    tsFile[packetNum].setPID(0x1fff);
+    tsFile[packetNum].removeAF();
+    tsFile[packetNum].removePUSI();
+    tsFile[packetNum].removeScramble();
+    tsFile[packetNum].clearTEIFlag();
+  }
   else if (op == "pay")
   {
     tsFile[packetNum].setPayloadFlag();
