@@ -362,5 +362,18 @@ TSPacket::writePadding()
   }
 }
 
+//----------------------------------------------------------------------------
+// Read unsigned int32, big endian
+unsigned int
+TSPacket::readUInt32BE(const unsigned char* data)
+{
+  unsigned int rv =
+    (data[0] << 24)
+  | (data[1] << 16)
+  | (data[2] << 8)
+  | (data[3]);
+  return(rv);
+}
+
 
 

@@ -74,6 +74,9 @@ class TSPacket
     
     // Returns true if the packet is marked as scrambled
     bool                   isScrambled() const;
+
+    // Read unsigned int32, big endian
+    static unsigned int    readUInt32BE(const unsigned char* data);
     
     // SETTERS
     
