@@ -1,4 +1,4 @@
-CXXFLAGS=-g -Wall -std=c++11
+CXXFLAGS=-g -W -Wall -Werror -std=c++11
 TSFILE=raw.ts
 TSFILE_ALIGNED=raw_aligned.ts
 TSFILE_FIXED=fixed.ts

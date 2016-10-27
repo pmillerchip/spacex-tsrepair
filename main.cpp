@@ -59,23 +59,6 @@ numBitsDifference(unsigned int a, unsigned int b)
 }
 
 //----------------------------------------------------------------------------
-void
-processTime(long int whichOne, double t)
-{
-  if (t >= lastSeconds)
-  {
-    // Time has ticked forwards
-    lastSeconds = t;
-  }
-  else
-  {
-    // Time has ticked backwards - lag!
-    printf("%f %f\n", t, lastSeconds - t);
-    fflush(stdout);
-  }
-}
-
-//----------------------------------------------------------------------------
 bool
 pidIsValid(unsigned int pid)
 {
@@ -154,7 +137,6 @@ processPacket(TSFile& tsFile, long int whichOne, FILE* ofd, FILE* mp4fd)
     ticks = p.getPCR() >> 15;
     printf("PCR: %llu (gap %llu) ", ticks, ticks - lastPCR);
     lastPCR = ticks;
-    //processTime(whichOne, clockToSeconds(ticks));
   }
 
   if (p.hasPTS())
@@ -162,7 +144,6 @@ processPacket(TSFile& tsFile, long int whichOne, FILE* ofd, FILE* mp4fd)
     ticks = p.getPTS();
     printf("PTS: %llu (gap %llu) ", ticks, ticks - lastPTS);
     lastPTS = ticks;
-    //processTime(whichOne, clockToSeconds(ticks));
   }
   
   if (p.hasPCR() && p.hasPTS())
