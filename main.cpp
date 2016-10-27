@@ -26,7 +26,6 @@ unsigned long long int lastPTS       = 0;
 bool outputting        = false;
 bool optionFix         = true;
 bool optionFixMP4AF    = false;
-bool optionTSRealign   = false;
 bool optionDumpAF      = false;
 bool optionFrameInfo   = false;
 bool optionPrintMP4    = true;
@@ -272,31 +271,7 @@ unsigned int
 getPacketOffset(unsigned int packetNum)
 {
   unsigned int offset = packetNum * TS_PACKET_SIZE;
-  if (!optionTSRealign) return(offset);
-  
-  // These numbers below are ONLY for the SpaceX raw.ts file!
-  
-  if (packetNum < 1224) return(offset);
-  
-  unsigned int correction = 0x382e0 - 0x382a8;
-  
-  if (packetNum < 4688) return(offset - correction);
-  
-  correction += (0xd7288 - 0xd7250);
-
-  if (packetNum < 11637) return(offset - correction);
-
-  correction += (0x21617c - 0x216144);
-
-  if (packetNum < 18633) return(offset - correction);
-
-  correction += (0x3572f4 - 0x3572bc);
-
-  if (packetNum < 21551) return(offset - correction);
-
-  correction += (0x3dd1a4 - 0x3dd16c);
-  
-  return(offset - correction);
+  return(offset);
 }
 
 //----------------------------------------------------------------------------
@@ -1028,7 +1003,6 @@ main(int argc, char** argv)
     if (argv[i][0] == '-')
     {
       if      (strcmp(argv[i], "-nofix")      == 0) optionFix         = false;
-      else if (strcmp(argv[i], "-realign")    == 0) optionTSRealign   = true;
       else if (strcmp(argv[i], "-dumpaf")     == 0) optionDumpAF      = true;
       else if (strcmp(argv[i], "-fixmp4af")   == 0) optionFixMP4AF    = true;
       else if (strcmp(argv[i], "-frameinfo")  == 0) optionFrameInfo   = true;
