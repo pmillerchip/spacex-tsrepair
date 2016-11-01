@@ -47,7 +47,7 @@
 274,pid,3e8
 275,pid,3e8
 276,pid,3e8
-277,pid,3e8
+277,null
 278,null
 278,pay,6
 279,pay,7
@@ -56,11 +56,16 @@
 292,null
 292,pay,4
 293,null
+294,pes
+294,pcr,1
 294,pay,13
-294,noaf
-295,pes
-295,pcr,1
-352,pid,3e8
+343,pid,3e8
+344,pay,15
+345,pid,3e8
+347,pay,2
+351,null
+352,null
+352,pay,6
 353,null
 353,pay,7
 354,null
@@ -76,5 +81,8 @@
 375,pes
 375,ptsauto
 376,noaf
+450,pay,3
+451,pay,4
+452,pay,5
 2845,pay,9
 
